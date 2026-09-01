@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -44,6 +45,16 @@
   }
   #spinner { display: none; text-align: center; padding: 20px; color: #666; }
   label { font-size: 0.85rem; color: #555; display: block; margin-bottom: 6px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tabBtn {
+    flex: 1; background: #e2e5e9; color: #333; padding: 10px; border-radius: 8px;
+    font-size: 0.9rem; border: none; cursor: pointer;
+  }
+  .tabBtn.active { background: var(--accent); color: white; }
+  #editRef {
+    padding: 10px; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 8px;
+    width: 100%; margin-bottom: 4px;
+  }
 </style>
 </head>
 <body>
@@ -60,7 +71,12 @@
   <h1>M&amp;M Draft Order Builder</h1>
   <p class="sub">Paste a customer's order, or upload their order form (PDF/photo). Claude will build a draft quotation in Odoo for you to review.</p>
 
-  <div class="card">
+  <div class="tabs">
+    <button type="button" class="tabBtn active" id="tabNewBtn" onclick="showTab('new')">New Order</button>
+    <button type="button" class="tabBtn" id="tabEditBtn" onclick="showTab('edit')">Edit Order</button>
+  </div>
+
+  <div class="card" id="newOrderCard">
     <label for="orderText">Pasted order text (email/message)</label>
     <textarea id="orderText" placeholder="Paste the customer's message here..."></textarea>
     <br /><br />
@@ -68,6 +84,19 @@
     <input type="file" id="orderFile" accept="application/pdf,image/*" />
     <button id="submitBtn" onclick="submitOrder()">Build Draft Order</button>
     <div class="error" id="submitError"></div>
+  </div>
+
+  <div class="card" id="editOrderCard" style="display:none;">
+    <label for="editRef">Order reference (e.g. S02914) or Odoo order id</label>
+    <input type="text" id="editRef" placeholder="S02914" />
+    <br /><br />
+    <label for="editInstructions">What should change?</label>
+    <textarea id="editInstructions" placeholder="e.g. Change highboys from 8 to 10, add 50 navy napkins at their usual rate..."></textarea>
+    <br /><br />
+    <label for="editFile">Optional: new/updated form (PDF or photo)</label>
+    <input type="file" id="editFile" accept="application/pdf,image/*" />
+    <button id="editSubmitBtn" onclick="submitEdit()">Apply Edit</button>
+    <div class="error" id="editError"></div>
   </div>
 
   <div id="spinner">Working on it — this can take up to a minute...</div>
@@ -94,6 +123,58 @@ async function login() {
     document.getElementById('app').style.display = 'block';
   } else {
     document.getElementById('loginError').textContent = 'Wrong password.';
+  }
+}
+
+function showTab(which) {
+  document.getElementById('newOrderCard').style.display = which === 'new' ? 'block' : 'none';
+  document.getElementById('editOrderCard').style.display = which === 'edit' ? 'block' : 'none';
+  document.getElementById('tabNewBtn').classList.toggle('active', which === 'new');
+  document.getElementById('tabEditBtn').classList.toggle('active', which === 'edit');
+  document.getElementById('resultCard').style.display = 'none';
+}
+
+async function submitEdit() {
+  const orderRef = document.getElementById('editRef').value.trim();
+  const instructions = document.getElementById('editInstructions').value.trim();
+  const fileInput = document.getElementById('editFile');
+  const errorEl = document.getElementById('editError');
+  errorEl.textContent = '';
+
+  if (!orderRef || !instructions) {
+    errorEl.textContent = 'Enter the order reference and what to change.';
+    return;
+  }
+
+  document.getElementById('editSubmitBtn').disabled = true;
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('resultCard').style.display = 'none';
+
+  const formData = new FormData();
+  formData.append('orderRef', orderRef);
+  formData.append('instructions', instructions);
+  if (fileInput.files.length > 0) formData.append('file', fileInput.files[0]);
+
+  try {
+    const res = await fetch('/api/edit-order', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+
+    document.getElementById('summaryText').textContent = data.summary;
+    document.getElementById('resultCard').style.display = 'block';
+
+    const pdfActions = document.getElementById('pdfActions');
+    if (data.orderId) {
+      document.getElementById('pdfLink').href = '/api/order-pdf/' + data.orderId;
+      pdfActions.style.display = 'flex';
+    } else {
+      pdfActions.style.display = 'none';
+    }
+  } catch (err) {
+    errorEl.textContent = err.message;
+  } finally {
+    document.getElementById('editSubmitBtn').disabled = false;
+    document.getElementById('spinner').style.display = 'none';
   }
 }
 
