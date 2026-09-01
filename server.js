@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
@@ -76,6 +77,44 @@ app.post("/api/draft-order", requireAuth, upload.single("file"), async (req, res
         });
       }
       content.push({ type: "text", text: "(Order form attached above.)" });
+    }
+
+    const result = await buildDraftOrder(content);
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Edit an existing order: give Claude the order reference + requested changes.
+app.post("/api/edit-order", requireAuth, upload.single("file"), async (req, res) => {
+  try {
+    const { orderRef, instructions } = req.body;
+    if (!orderRef || !instructions) {
+      return res.status(400).json({ error: "Provide the order reference and what to change." });
+    }
+
+    const content = [
+      {
+        type: "text",
+        text: `EDIT REQUEST for existing order reference: ${orderRef}\n\nRequested changes:\n${instructions}`,
+      },
+    ];
+    if (req.file) {
+      const base64 = req.file.buffer.toString("base64");
+      if (req.file.mimetype === "application/pdf") {
+        content.push({
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: base64 },
+        });
+      } else if (req.file.mimetype.startsWith("image/")) {
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: req.file.mimetype, data: base64 },
+        });
+      }
+      content.push({ type: "text", text: "(New reference form attached above.)" });
     }
 
     const result = await buildDraftOrder(content);
