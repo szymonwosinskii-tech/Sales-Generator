@@ -6,7 +6,7 @@ const crypto = require("crypto");
 const path = require("path");
 
 const odoo = require("./lib/odoo");
-const { buildDraftOrder } = require("./lib/claude");
+const { buildDraftOrder, continueConversation } = require("./lib/claude");
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -16,8 +16,8 @@ const APP_PASSWORD = process.env.APP_PASSWORD;
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-me";
 const COOKIE_NAME = "mm_draft_session";
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -117,6 +117,22 @@ app.post("/api/edit-order", requireAuth, upload.single("file"), async (req, res)
     }
 
     const result = await buildDraftOrder(content);
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Continue a conversation after the human replies to Claude's clarifying question(s).
+// Expects { conversationMessages: <the messages array returned earlier>, reply: "..." }
+app.post("/api/continue-order", requireAuth, async (req, res) => {
+  try {
+    const { conversationMessages, reply } = req.body;
+    if (!Array.isArray(conversationMessages) || !reply) {
+      return res.status(400).json({ error: "Missing conversation state or reply text." });
+    }
+    const result = await continueConversation(conversationMessages, reply);
     res.json(result);
   } catch (err) {
     console.error(err);

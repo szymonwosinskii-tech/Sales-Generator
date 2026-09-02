@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -107,6 +107,13 @@
       <a id="pdfLink" href="#" target="_blank">View / Download Quote PDF</a>
     </div>
   </div>
+
+  <div class="card" id="replyCard" style="display:none;">
+    <label for="replyText">Your reply</label>
+    <textarea id="replyText" placeholder="Answer the question(s) above..."></textarea>
+    <button id="replyBtn" onclick="submitReply()">Send Reply</button>
+    <div class="error" id="replyError"></div>
+  </div>
 </div>
 
 <script>
@@ -125,12 +132,74 @@ async function login() {
   }
 }
 
+let currentConversationMessages = null;
+
+function renderResult(data) {
+  document.getElementById('summaryText').textContent = data.summary;
+  document.getElementById('resultCard').style.display = 'block';
+  currentConversationMessages = data.messages || null;
+
+  const pdfActions = document.getElementById('pdfActions');
+  if (data.orderId) {
+    document.getElementById('pdfLink').href = '/api/order-pdf/' + data.orderId;
+    pdfActions.style.display = 'flex';
+  } else {
+    pdfActions.style.display = 'none';
+  }
+
+  // Show the reply box whenever there's an ongoing conversation to continue (e.g. Claude asked
+  // a question) - i.e. whenever we have conversation state saved.
+  const replyCard = document.getElementById('replyCard');
+  if (currentConversationMessages) {
+    replyCard.style.display = 'block';
+    document.getElementById('replyText').value = '';
+  } else {
+    replyCard.style.display = 'none';
+  }
+}
+
+async function submitReply() {
+  const reply = document.getElementById('replyText').value.trim();
+  const errorEl = document.getElementById('replyError');
+  errorEl.textContent = '';
+
+  if (!reply) {
+    errorEl.textContent = 'Type your answer first.';
+    return;
+  }
+  if (!currentConversationMessages) {
+    errorEl.textContent = 'Nothing to reply to - start a new order or edit first.';
+    return;
+  }
+
+  document.getElementById('replyBtn').disabled = true;
+  document.getElementById('spinner').style.display = 'block';
+
+  try {
+    const res = await fetch('/api/continue-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationMessages: currentConversationMessages, reply }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+    renderResult(data);
+  } catch (err) {
+    errorEl.textContent = err.message;
+  } finally {
+    document.getElementById('replyBtn').disabled = false;
+    document.getElementById('spinner').style.display = 'none';
+  }
+}
+
 function showTab(which) {
   document.getElementById('newOrderCard').style.display = which === 'new' ? 'block' : 'none';
   document.getElementById('editOrderCard').style.display = which === 'edit' ? 'block' : 'none';
   document.getElementById('tabNewBtn').classList.toggle('active', which === 'new');
   document.getElementById('tabEditBtn').classList.toggle('active', which === 'edit');
   document.getElementById('resultCard').style.display = 'none';
+  document.getElementById('replyCard').style.display = 'none';
+  currentConversationMessages = null;
 }
 
 async function submitEdit() {
@@ -158,17 +227,7 @@ async function submitEdit() {
     const res = await fetch('/api/edit-order', { method: 'POST', body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Something went wrong.');
-
-    document.getElementById('summaryText').textContent = data.summary;
-    document.getElementById('resultCard').style.display = 'block';
-
-    const pdfActions = document.getElementById('pdfActions');
-    if (data.orderId) {
-      document.getElementById('pdfLink').href = '/api/order-pdf/' + data.orderId;
-      pdfActions.style.display = 'flex';
-    } else {
-      pdfActions.style.display = 'none';
-    }
+    renderResult(data);
   } catch (err) {
     errorEl.textContent = err.message;
   } finally {
@@ -209,17 +268,7 @@ async function submitOrder() {
     const res = await fetch('/api/draft-order', { method: 'POST', body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Something went wrong.');
-
-    document.getElementById('summaryText').textContent = data.summary;
-    document.getElementById('resultCard').style.display = 'block';
-
-    const pdfActions = document.getElementById('pdfActions');
-    if (data.orderId) {
-      document.getElementById('pdfLink').href = '/api/order-pdf/' + data.orderId;
-      pdfActions.style.display = 'flex';
-    } else {
-      pdfActions.style.display = 'none';
-    }
+    renderResult(data);
   } catch (err) {
     errorEl.textContent = err.message;
   } finally {
